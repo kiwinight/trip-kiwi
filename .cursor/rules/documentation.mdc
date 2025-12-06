@@ -1,0 +1,40 @@
+---
+description: Rules for documentation and logging
+alwaysApply: true
+---
+
+# Documentation Structure
+
+All documentation lives in `/docs/log/` as timestamped markdown files.
+
+## File Naming Convention
+
+```
+YYYY-MM-DD-[short-summary].md
+```
+
+Examples:
+
+- `2025-11-30-initial-planning.md`
+- `2025-12-01-mvp-features.md`
+- `2025-12-02-landing-page.md`
+
+## File Content
+
+Each log file should contain:
+
+- Decisions made during the discussion
+- Key insights
+- Action items (if any)
+- Context for future reference
+
+## No Generic Files
+
+Do NOT create generic files like:
+
+- `PLAN.md`
+- `SPEC.md`
+- `TODO.md`
+- `README.md` (unless explicitly requested)
+
+Everything should be logged with timestamps.

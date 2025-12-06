@@ -1,0 +1,11 @@
+{
+  "name": "trip-kiwi",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter web dev",
+    "build": "pnpm --filter web build",
+    "start": "pnpm --filter web start",
+    "typecheck": "pnpm --filter web typecheck"
+  }
+}
+
