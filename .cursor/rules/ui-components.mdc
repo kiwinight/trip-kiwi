@@ -1,0 +1,57 @@
+---
+description: UI component architecture and shadcn-ui usage
+alwaysApply: true
+---
+
+# UI Component Architecture
+
+## Directory Structure
+
+```
+web/app/components/
+├── shadcn-ui/    # CLI-generated only, never manually edit
+└── ui/           # Override layer - always import from here
+    ├── index.ts  # Barrel file re-exporting all components
+    └── *.tsx     # Custom overrides (optional)
+```
+
+## Rules
+
+1. **Always import from `~/components/ui`**, never directly from `shadcn-ui/`
+2. **Never manually edit files in `shadcn-ui/`** — they are CLI-generated
+3. **To customize a component**, create an override in `ui/` and update `ui/index.ts`
+
+## Regenerating shadcn Components
+
+Run periodically to update all shadcn components:
+
+```bash
+cd web && pnpm dlx shadcn@latest add --all --overwrite
+```
+
+This updates `shadcn-ui/` without affecting overrides in `ui/`.
+
+## Creating an Override
+
+1. Create `ui/[component].tsx` that imports from `shadcn-ui/`
+2. Update `ui/index.ts` to export from your override instead
+
+Example (`ui/button.tsx`):
+
+```tsx
+import { Button as ShadcnButton, buttonVariants } from "../shadcn-ui/button";
+
+export { buttonVariants };
+
+export function Button({ loading, ...props }) {
+  return <ShadcnButton disabled={loading} {...props} />;
+}
+```
+
+Then in `ui/index.ts`:
+
+```tsx
+// Change: export * from "../shadcn-ui/button";
+// To:
+export * from "./button";
+```
