@@ -132,19 +132,19 @@
 }
 
 .tiptap h1 {
-  @apply text-2xl font-bold mb-2;
+  @apply text-xl font-semibold mb-2;
 }
 
 .tiptap h2 {
-  @apply text-xl font-semibold mt-6 mb-2 text-foreground;
+  @apply text-lg font-medium mt-6 mb-2 text-foreground;
 }
 
 .tiptap h3 {
-  @apply text-lg font-medium mt-4 mb-1 text-foreground;
+  @apply text-primary font-medium mt-4 mb-1 text-foreground;
 }
 
 .tiptap p {
-  @apply my-1 leading-relaxed;
+  @apply my-1 leading-relaxed text-sm;
 }
 
 .tiptap hr {

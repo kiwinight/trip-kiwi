@@ -6,6 +6,8 @@
     "build": "pnpm --filter web build",
     "start": "pnpm --filter web start",
     "typecheck": "pnpm --filter web typecheck"
+  },
+  "dependencies": {
+    "@tiptap/suggestion": "^3.13.0"
   }
 }
-
