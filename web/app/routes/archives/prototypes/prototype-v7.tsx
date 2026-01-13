@@ -1,7 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
 import { Link } from "react-router";
-import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
 import {
   Settings,
   Plus,
@@ -10,6 +8,13 @@ import {
   Trash2,
   PanelLeftClose,
   PanelLeft,
+  Gift,
+  Sparkles,
+  Heart,
+  Users,
+  Briefcase,
+  User,
+  DollarSign,
   ShoppingBag,
   Copy,
   Download,
@@ -70,100 +75,261 @@ import { cn } from "~/libs/utils";
 // Types
 // =============================================================================
 
+type ChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  questionStep?: SearchStep; // If set, render question card for this step
+};
+
 type QuickOption = {
   label: string;
   value: string;
   description?: string;
+  icon?: React.ComponentType<{ className?: string }>;
 };
 
-// Field types matching backend schema
-type CurrentField =
-  | "occasion"
-  | "recipient"
-  | "recipientDetail"
-  | "budget"
-  | "interests"
-  | "none";
-
-// Structured output from LLM
-type ShoppingOutput = {
-  responseText: string;
-  currentField: CurrentField;
-  extractedInfo: {
-    occasion?: string | null;
-    recipient?: string | null;
-    recipientDetail?: string | null;
-    budget?: string | null;
-    interests?: string | null;
-  };
-  allCollected: boolean;
-};
+// Search step tracking for guided flow
+type SearchStep =
+  | "type" // What are you looking for?
+  | "recipient" // Who is this for?
+  | "budget" // What's your budget?
+  | "complete"; // Report is ready
 
 type SearchState = {
   id: string;
   title: string;
+  messages: ChatMessage[];
   reportContent: string | null;
+  step: SearchStep;
+  // Collected data from guided flow
+  giftType?: string;
+  recipient?: string;
+  budget?: string;
   createdAt: Date;
 };
 
 // =============================================================================
-// Question Options Configuration (matches backend fields)
+// Question Flow Configuration
 // =============================================================================
 
 type QuestionConfig = {
-  field: CurrentField;
-  options: QuickOption[];
+  step: SearchStep;
+  title: string;
+  question: string;
+  options?: QuickOption[];
+  isLastQuestion?: boolean;
 };
 
-const QUESTION_OPTIONS: Record<CurrentField, QuickOption[] | null> = {
-  occasion: [
-    { label: "Birthday gift", value: "birthday" },
-    { label: "Thank you gift", value: "thankyou" },
-    { label: "Holiday gift", value: "holiday" },
-    { label: "Just because", value: "justbecause" },
-  ],
-  recipient: [
-    { label: "Partner / Spouse", value: "partner" },
-    { label: "Family member", value: "family" },
-    { label: "Friend", value: "friend" },
-    { label: "Colleague", value: "colleague" },
-  ],
-  recipientDetail: null, // Dynamic based on recipient selection
-  budget: [
-    { label: "Under $30", value: "under30" },
-    { label: "$30 - $50", value: "30to50" },
-    { label: "$50 - $100", value: "50to100" },
-    { label: "$100 - $200", value: "100to200" },
-    { label: "Over $200", value: "over200" },
-  ],
-  interests: null, // Free-form input only
-  none: null,
-};
+const QUESTIONS: QuestionConfig[] = [
+  {
+    step: "type",
+    title: "Gift Type",
+    question: "What are you looking for?",
+    options: [
+      { label: "Birthday gift", value: "birthday" },
+      { label: "Thank you gift", value: "thankyou" },
+      { label: "Holiday gift", value: "holiday" },
+      { label: "Just because", value: "justbecause" },
+    ],
+  },
+  {
+    step: "recipient",
+    title: "Recipient",
+    question: "Who is this gift for?",
+    options: [
+      {
+        label: "Partner / Spouse",
+        value: "partner",
+      },
+      {
+        label: "Family member",
+        value: "family",
+      },
+      {
+        label: "Friend",
+        value: "friend",
+      },
+      {
+        label: "Colleague",
+        value: "colleague",
+      },
+    ],
+  },
+  {
+    step: "budget",
+    title: "Budget",
+    question: "What's your budget?",
+    options: [
+      { label: "Under $30", value: "under30" },
+      { label: "$30 - $50", value: "30to50" },
+      { label: "$50 - $100", value: "50to100" },
+      { label: "$100 - $200", value: "100to200" },
+      { label: "Over $200", value: "over200" },
+    ],
+    isLastQuestion: true,
+  },
+];
 
-function getOptionsForField(field: CurrentField): QuickOption[] | null {
-  return QUESTION_OPTIONS[field];
+function getQuestionIndex(step: SearchStep): number {
+  return QUESTIONS.findIndex((q) => q.step === step);
 }
 
-// =============================================================================
-// LLM Response Parsing
-// =============================================================================
+function getNextStep(currentStep: SearchStep): SearchStep {
+  const currentIndex = getQuestionIndex(currentStep);
+  if (currentIndex === -1 || currentIndex >= QUESTIONS.length - 1) {
+    return "complete";
+  }
+  return QUESTIONS[currentIndex + 1].step;
+}
 
-function parseLLMResponse(text: string): ShoppingOutput | null {
-  try {
-    const parsed = JSON.parse(text);
-    // Basic validation
-    if (
-      typeof parsed.responseText === "string" &&
-      typeof parsed.currentField === "string" &&
-      typeof parsed.allCollected === "boolean"
-    ) {
-      return parsed as ShoppingOutput;
-    }
-    return null;
-  } catch {
-    return null;
+function getCurrentQuestion(step: SearchStep): QuestionConfig | undefined {
+  return QUESTIONS.find((q) => q.step === step);
+}
+
+function getQuestionText(step: SearchStep): string {
+  const question = getCurrentQuestion(step);
+  if (question) return question.question;
+
+  switch (step) {
+    case "complete":
+      return "Your report is ready! Check the panel on the right for my recommendations.";
+    default:
+      return "";
   }
 }
+
+// =============================================================================
+// Mock Data
+// =============================================================================
+
+const MOCK_REPORT_CONTENT = `
+<h2>🎯 Quick Pick</h2>
+<p><strong>OXO Good Grips 11-Pound Food Scale</strong> — $54.95</p>
+<p>Best balance of precision, durability, and ease of use for home cooks. Pull-out display prevents bowl shadows.</p>
+
+<h2>📊 Top Options Comparison</h2>
+<ul>
+  <li><strong>OXO Good Grips 11lb Scale</strong> ($54.95) — Best for daily home cooking ★★★★★</li>
+  <li><strong>Escali Primo Digital Scale</strong> ($24.95) — Best budget option ★★★★☆</li>
+  <li><strong>Zwilling Enfinigy Digital Scale</strong> ($99.95) — Premium look & feel ★★★★☆</li>
+</ul>
+
+<h2>✨ Why This Pick</h2>
+<p>The OXO scale consistently ranks #1 across cooking communities for home use. Its pull-out display solves the common problem of large bowls blocking the screen. The 11lb capacity handles everything from baking to meal prep, and OXO's build quality means it'll last for years.</p>
+
+<h2>💬 What Reddit Says</h2>
+<ul>
+  <li><strong>r/Cooking</strong> (↑847): "Had my OXO scale for 6 years now, still works perfectly. The pull-out display is a game changer."</li>
+  <li><strong>r/BuyItForLife</strong> (↑423): "This is one of those products where spending a bit more upfront saves you from buying replacements."</li>
+  <li><strong>r/Baking</strong> (↑256): "Essential for serious baking. Measuring by weight changed my bread game completely."</li>
+</ul>
+
+<h2>⚠️ Watch Out For</h2>
+<ul>
+  <li>The display can be sensitive to water - wipe dry after cleaning</li>
+  <li>Needs 4 AAA batteries (not included in some packages)</li>
+  <li>The pull-out display adds to the footprint when extended</li>
+</ul>
+
+<h2>🛒 Where to Buy</h2>
+<ul>
+  <li><strong>Amazon</strong> — $54.95 (In Stock, Free 2-day with Prime)</li>
+  <li><strong>Target</strong> — $54.99 (In Stock, Free shipping over $35)</li>
+  <li><strong>OXO Direct</strong> — $54.95 (In Stock, Free shipping)</li>
+</ul>
+
+<h2>❌ What We Ruled Out</h2>
+<ul>
+  <li><strong>Greater Goods Digital Scale</strong> — Lower build quality, common complaints about accuracy drift</li>
+  <li><strong>KitchenAid Dual Platform Scale</strong> — Over budget at $129, features she won't need</li>
+</ul>
+
+<h2>🎁 Gift Presentation Ideas</h2>
+<p>Consider pairing with a nice set of measuring spoons or a recipe book. Wrap in kraft paper with a ribbon for that 'practical but thoughtful' feel she'll appreciate.</p>
+`;
+
+const createMockSearches = (): SearchState[] => [
+  {
+    id: "search-1",
+    title: "Birthday gift",
+    step: "complete",
+    giftType: "Birthday gift",
+    recipient: "Partner / Spouse",
+    budget: "$50 - $100",
+    messages: [
+      {
+        id: "msg-1",
+        role: "assistant",
+        content: "What are you looking for?",
+        questionStep: "type",
+      },
+      { id: "msg-2", role: "user", content: "Birthday gift" },
+      {
+        id: "msg-3",
+        role: "assistant",
+        content: "Who is this gift for?",
+        questionStep: "recipient",
+      },
+      { id: "msg-4", role: "user", content: "Partner / Spouse" },
+      {
+        id: "msg-5",
+        role: "assistant",
+        content: "What's your budget?",
+        questionStep: "budget",
+      },
+      { id: "msg-6", role: "user", content: "$50 - $100" },
+    ],
+    reportContent: MOCK_REPORT_CONTENT,
+    createdAt: new Date("2026-01-02T10:30:00"),
+  },
+  {
+    id: "search-2",
+    title: "Just because",
+    step: "budget",
+    giftType: "Just because",
+    recipient: "Friend",
+    messages: [
+      {
+        id: "msg-1",
+        role: "assistant",
+        content: "What are you looking for?",
+        questionStep: "type",
+      },
+      { id: "msg-2", role: "user", content: "Just because" },
+      {
+        id: "msg-3",
+        role: "assistant",
+        content: "Who is this gift for?",
+        questionStep: "recipient",
+      },
+      { id: "msg-4", role: "user", content: "Friend" },
+      {
+        id: "msg-5",
+        role: "assistant",
+        content: "What's your budget?",
+        questionStep: "budget",
+      },
+    ],
+    reportContent: null,
+    createdAt: new Date("2026-01-03T14:20:00"),
+  },
+  {
+    id: "search-3",
+    title: "New search",
+    step: "type",
+    messages: [
+      {
+        id: "msg-1",
+        role: "assistant",
+        content: "What are you looking for?",
+        questionStep: "type",
+      },
+    ],
+    reportContent: null,
+    createdAt: new Date("2026-01-04T09:15:00"),
+  },
+];
 
 // =============================================================================
 // Constants
@@ -271,11 +437,13 @@ function UserMessage({ content }: { content: string }) {
 
 // Inline question card that appears below assistant messages
 function InlineQuestionCard({
-  options,
+  question,
   onSelectOption,
+  onSkip,
 }: {
-  options: QuickOption[];
-  onSelectOption: (label: string) => void;
+  question: QuestionConfig;
+  onSelectOption: (value: string, label: string) => void;
+  onSkip?: () => void;
 }) {
   const [otherInput, setOtherInput] = useState("");
   const [selectedValue, setSelectedValue] = useState<string | undefined>();
@@ -289,22 +457,28 @@ function InlineQuestionCard({
 
     if (selectedValue === "other") {
       if (otherInput.trim()) {
-        onSelectOption(otherInput.trim());
+        onSelectOption("other", otherInput.trim());
         setOtherInput("");
         setSelectedValue(undefined);
       }
     } else {
-      const option = options.find((o) => o.value === selectedValue);
+      const option = question.options?.find((o) => o.value === selectedValue);
       if (option) {
-        onSelectOption(option.label);
+        onSelectOption(option.value, option.label);
         setSelectedValue(undefined);
       }
     }
   };
 
+  const handleSkip = () => {
+    onSkip?.();
+  };
+
   // Check if submit should be disabled
   const isSubmitDisabled =
     !selectedValue || (selectedValue === "other" && !otherInput.trim());
+
+  if (!question.options) return null;
 
   return (
     <div>
@@ -315,7 +489,7 @@ function InlineQuestionCard({
             onValueChange={handleValueChange}
             className="gap-2"
           >
-            {options.map((option) => (
+            {question.options.map((option) => (
               <FieldLabel
                 key={option.value}
                 htmlFor={option.value}
@@ -353,6 +527,7 @@ function InlineQuestionCard({
                 value={otherInput}
                 onChange={(e) => setOtherInput(e.target.value)}
                 placeholder="Type your answer..."
+                // className="h-9"
                 autoFocus
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && otherInput.trim()) {
@@ -363,8 +538,11 @@ function InlineQuestionCard({
             </div>
           )}
 
-          {/* Submit button */}
+          {/* Skip and Submit buttons */}
           <div className="flex justify-end gap-2 mt-3">
+            <Button variant="ghost" onClick={handleSkip}>
+              Skip
+            </Button>
             <Button onClick={handleSubmit} disabled={isSubmitDisabled}>
               Next
             </Button>
@@ -379,76 +557,28 @@ function InlineQuestionCard({
 // Chat Panel Component
 // =============================================================================
 
-// Type for AI SDK messages
-type Message = {
-  id: string;
-  role: "user" | "assistant" | "system";
-  parts?: Array<{ type: string; text?: string }>;
-  content?: string;
-};
-
 function ChatPanel({
-  messages,
-  isLoading,
+  search,
+  onSelectOption,
+  onSkip,
   onSendMessage,
 }: {
-  messages: Message[];
-  isLoading: boolean;
+  search: SearchState;
+  onSelectOption: (value: string, label: string) => void;
+  onSkip: () => void;
   onSendMessage: (message: string) => void;
 }) {
   const [chatInput, setChatInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const { step, messages } = search;
 
-  // Extract text from AI SDK message parts
-  const getMessageText = (msg: Message): string => {
-    if (msg.parts) {
-      return msg.parts
-        .filter((part) => part.type === "text" && part.text)
-        .map((part) => part.text)
-        .join("");
-    }
-    return msg.content || "";
-  };
-
-  // Get display text and parsed data from message
-  const getMessageDisplay = (
-    msg: Message
-  ): { text: string; parsed: ShoppingOutput | null } => {
-    const rawText = getMessageText(msg);
-    if (msg.role === "assistant") {
-      const parsed = parseLLMResponse(rawText);
-      if (parsed) {
-        return { text: parsed.responseText, parsed };
-      }
-    }
-    return { text: rawText, parsed: null };
-  };
-
-  // Get current field from the last assistant message
-  const getLatestAssistantResponse = (): ShoppingOutput | null => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i];
-      if (msg.role === "assistant") {
-        const rawText = getMessageText(msg);
-        const parsed = parseLLMResponse(rawText);
-        if (parsed) {
-          return parsed;
-        }
-      }
-    }
-    return null;
-  };
-
-  const latestResponse = getLatestAssistantResponse();
-  const currentField = latestResponse?.currentField ?? "occasion";
-  const allCollected = latestResponse?.allCollected ?? false;
-  const currentOptions = getOptionsForField(currentField);
+  const currentQuestion = getCurrentQuestion(step);
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages]);
+  }, [messages, step]);
 
   const handleSendMessage = () => {
     if (chatInput.trim()) {
@@ -457,49 +587,43 @@ function ChatPanel({
     }
   };
 
-  const handleSelectOption = (label: string) => {
-    onSendMessage(label);
-  };
-
   return (
     <div className="flex-1 min-h-0 relative">
       {/* Scrollable messages - full height */}
       <ScrollArea className="h-full" ref={scrollRef}>
         <div className="p-4 pb-40 space-y-4 mx-auto">
-          {/* Welcome message if no AI messages yet */}
-          {messages.length === 0 && (
-            <AssistantMessage content="Hi! I'm here to help you find the perfect gift. What are you looking for today?" />
-          )}
-
-          {/* Render AI SDK messages */}
-          {messages.map((message) => {
+          {/* Render all messages */}
+          {messages.map((message, idx) => {
+            const isLastMessage = idx === messages.length - 1;
             const isAssistant = message.role === "assistant";
-            const { text } = getMessageDisplay(message);
+            const hasQuestionCard = isAssistant && message.questionStep;
+            const shouldShowInteractiveCard =
+              hasQuestionCard && isLastMessage && currentQuestion;
 
             return (
               <div key={message.id} className="space-y-2">
                 {isAssistant ? (
-                  <AssistantMessage content={text} />
+                  <>
+                    <AssistantMessage content={message.content} />
+                    {/* Show interactive question card only for the last assistant message */}
+                    {shouldShowInteractiveCard && currentQuestion && (
+                      <InlineQuestionCard
+                        question={currentQuestion}
+                        onSelectOption={onSelectOption}
+                        onSkip={onSkip}
+                      />
+                    )}
+                  </>
                 ) : (
-                  <UserMessage content={text} />
+                  <UserMessage content={message.content} />
                 )}
               </div>
             );
           })}
 
-          {/* Show loading indicator */}
-          {isLoading && (
-            <div className="text-sm text-muted-foreground animate-pulse">
-              Thinking...
-            </div>
-          )}
-
-          {/* Show question card based on LLM's currentField */}
-          {!isLoading && !allCollected && currentOptions && (
-            <InlineQuestionCard
-              options={currentOptions}
-              onSelectOption={handleSelectOption}
-            />
+          {/* Show complete state */}
+          {step === "complete" && (
+            <AssistantMessage content="Your report is ready! Check the panel on the right for my recommendations." />
           )}
         </div>
       </ScrollArea>
@@ -520,13 +644,12 @@ function ChatPanel({
                 }}
                 placeholder="Reply..."
                 className="min-h-[60px] max-h-[120px] resize-none border-0 bg-transparent shadow-none focus-visible:ring-0 p-0 rounded-none text-sm!"
-                disabled={isLoading}
               />
               <Button
                 variant="ghost"
                 size="icon"
                 className="shrink-0"
-                disabled={!chatInput.trim() || isLoading}
+                disabled={!chatInput.trim()}
                 onClick={handleSendMessage}
               >
                 <Send className="size-4" />
@@ -562,24 +685,15 @@ export default function PrototypeV7Route() {
     useState(NAV_DEFAULT_SIZE);
   const [uiScale, setUiScale] = useState<UIScale>("100%");
 
-  // Searches state - start empty
-  const [searches, setSearches] = useState<SearchState[]>([]);
-  const [selectedSearchId, setSelectedSearchId] = useState<string | null>(null);
+  // Searches state
+  const [searches, setSearches] = useState<SearchState[]>(createMockSearches());
+  const [selectedSearchId, setSelectedSearchId] = useState<string>(
+    searches[0]?.id
+  );
   const selectedSearch = searches.find((s) => s.id === selectedSearchId);
 
   // Dialog states
   const [openDeleteSearchDialog, setOpenDeleteSearchDialog] = useState(false);
-
-  // AI Chat hook
-  const {
-    messages,
-    sendMessage,
-    status: chatStatus,
-  } = useChat({
-    transport: new DefaultChatTransport({
-      api: "http://localhost:4111/chat/shopping-agent",
-    }),
-  });
 
   // Apply UI scale
   useEffect(() => {
@@ -597,7 +711,16 @@ export default function PrototypeV7Route() {
     const newSearch: SearchState = {
       id: `search-${Date.now()}`,
       title: "New search",
+      messages: [
+        {
+          id: `msg-${Date.now()}`,
+          role: "assistant",
+          content: getQuestionText("type"),
+          questionStep: "type",
+        },
+      ],
       reportContent: null,
+      step: "type",
       createdAt: new Date(),
     };
     setSearches((prev) => [newSearch, ...prev]);
@@ -610,18 +733,148 @@ export default function PrototypeV7Route() {
       const filtered = prev.filter((s) => s.id !== selectedSearch.id);
       if (filtered.length > 0) {
         setSelectedSearchId(filtered[0].id);
-      } else {
-        setSelectedSearchId(null);
       }
       return filtered;
     });
     setOpenDeleteSearchDialog(false);
   };
 
-  const handleSendMessage = (message: string) => {
-    if (!message.trim()) return;
-    sendMessage({ text: message });
+  const handleSelectOption = (value: string, label: string) => {
+    if (!selectedSearch) return;
+
+    const currentStep = selectedSearch.step;
+    const nextStep = getNextStep(currentStep);
+    const nextQuestion = getCurrentQuestion(nextStep);
+    const nextQuestionText = getQuestionText(nextStep);
+
+    // Build messages array: add user response, then next assistant question
+    const newMessages: ChatMessage[] = [
+      ...selectedSearch.messages,
+      { id: `msg-${Date.now()}`, role: "user" as const, content: label },
+    ];
+
+    // Add assistant message with the next question (if not complete)
+    if (nextQuestionText && nextStep !== "complete") {
+      newMessages.push({
+        id: `msg-${Date.now() + 1}`,
+        role: "assistant" as const,
+        content: nextQuestionText,
+        questionStep: nextQuestion ? nextStep : undefined,
+      });
+    }
+
+    // Update the search with the selected value
+    const updates: Partial<SearchState> = {
+      step: nextStep,
+      messages: newMessages,
+    };
+
+    // Store the value in the appropriate field
+    switch (currentStep) {
+      case "type":
+        updates.giftType = label;
+        // Update title based on first selection
+        if (selectedSearch.title === "New search") {
+          updates.title = label;
+        }
+        break;
+      case "recipient":
+        updates.recipient = label;
+        break;
+      case "budget":
+        updates.budget = label;
+        break;
+    }
+
+    // If completing, add mock report content
+    if (nextStep === "complete") {
+      updates.reportContent = MOCK_REPORT_CONTENT;
+    }
+
+    setSearches((prev) =>
+      prev.map((s) => (s.id === selectedSearchId ? { ...s, ...updates } : s))
+    );
   };
+
+  const handleSendMessage = (message: string) => {
+    if (!selectedSearch) return;
+
+    // Add user message
+    const userMessage: ChatMessage = {
+      id: `msg-${Date.now()}`,
+      role: "user",
+      content: message,
+    };
+
+    // Mock AI response
+    const aiResponse: ChatMessage = {
+      id: `msg-${Date.now() + 1}`,
+      role: "assistant",
+      content: getMockChatResponse(message),
+    };
+
+    setSearches((prev) =>
+      prev.map((s) =>
+        s.id === selectedSearchId
+          ? { ...s, messages: [...s.messages, userMessage, aiResponse] }
+          : s
+      )
+    );
+  };
+
+  const handleSkipQuestion = () => {
+    if (!selectedSearch) return;
+
+    const currentStep = selectedSearch.step;
+    const nextStep = getNextStep(currentStep);
+    const nextQuestion = getCurrentQuestion(nextStep);
+    const nextQuestionText = getQuestionText(nextStep);
+
+    // Build messages array: add "Skipped" user response, then next assistant question
+    const newMessages: ChatMessage[] = [
+      ...selectedSearch.messages,
+      { id: `msg-${Date.now()}`, role: "user" as const, content: "Skipped" },
+    ];
+
+    // Add assistant message with the next question (if not complete)
+    if (nextQuestionText && nextStep !== "complete") {
+      newMessages.push({
+        id: `msg-${Date.now() + 1}`,
+        role: "assistant" as const,
+        content: nextQuestionText,
+        questionStep: nextQuestion ? nextStep : undefined,
+      });
+    }
+
+    const updates: Partial<SearchState> = {
+      step: nextStep,
+      messages: newMessages,
+    };
+
+    // If completing, add mock report content
+    if (nextStep === "complete") {
+      updates.reportContent = MOCK_REPORT_CONTENT;
+    }
+
+    setSearches((prev) =>
+      prev.map((s) => (s.id === selectedSearchId ? { ...s, ...updates } : s))
+    );
+  };
+
+  // Mock chat response
+  function getMockChatResponse(input: string): string {
+    const lower = input.toLowerCase();
+    if (lower.includes("help") || lower.includes("how")) {
+      return "I'm here to help you find the perfect gift! You can answer the questions above, or tell me more about what you're looking for.";
+    }
+    if (lower.includes("budget") || lower.includes("price")) {
+      return "I can work with any budget! Just let me know your range and I'll find the best options within it.";
+    }
+    if (lower.includes("recommend") || lower.includes("suggest")) {
+      return "Based on what you've told me so far, I'd be happy to make some recommendations. Could you share a bit more about the recipient's interests?";
+    }
+    return "Got it! Feel free to continue with the questions above, or let me know if you have any specific requirements.";
+  }
 
   // Settings dropdown content
   const settingsDropdownContent = (
@@ -796,11 +1049,14 @@ export default function PrototypeV7Route() {
                     </AlertDialogContent>
                   </AlertDialog>
                 </div>
-                <ChatPanel
-                  messages={messages}
-                  isLoading={chatStatus === "streaming"}
-                  onSendMessage={handleSendMessage}
-                />
+                {selectedSearch && (
+                  <ChatPanel
+                    search={selectedSearch}
+                    onSelectOption={handleSelectOption}
+                    onSkip={handleSkipQuestion}
+                    onSendMessage={handleSendMessage}
+                  />
+                )}
               </div>
             </ResizablePanel>
 
@@ -991,11 +1247,14 @@ export default function PrototypeV7Route() {
                   </AlertDialogContent>
                 </AlertDialog>
               </div>
-              <ChatPanel
-                messages={messages}
-                isLoading={chatStatus === "streaming"}
-                onSendMessage={handleSendMessage}
-              />
+              {selectedSearch && (
+                <ChatPanel
+                  search={selectedSearch}
+                  onSelectOption={handleSelectOption}
+                  onSkip={handleSkipQuestion}
+                  onSendMessage={handleSendMessage}
+                />
+              )}
             </div>
           </ResizablePanel>
 
