@@ -865,3 +865,11 @@ The classic 20 questions-style game where the system guesses the character you'r
 #### Turing Quest
 
 A party game where players compete to write jokes. Players connect via phones, answer prompts, write funny responses, and vote on whether human or machine-generated answers are funniest. Available on Steam for remote or in-person play.
+
+---
+
+## References
+
+- [Companion Guide](https://companionguide.ai/companions) — Directory of AI companion apps
+- [DiceBear Playground](https://www.dicebear.com/playground/) — Avatar generation library
+- [Google Stitch](https://stitch.withgoogle.com/projects/11524322699531095187?pli=1) — Sample design prototype of our app
